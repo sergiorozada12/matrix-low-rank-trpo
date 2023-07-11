@@ -72,8 +72,8 @@ if __name__ == "__main__":
         )
         res_lr.append(totals)
 
-    with open('pend_nn.pkl','wb') as f:
+    with open('results/pend_nn.pkl','wb') as f:
         pickle.dump(res_nn, f)
 
-    with open('pend_lr.pkl','wb') as f:
+    with open('results/pend_lr.pkl','wb') as f:
         pickle.dump(res_lr, f)
