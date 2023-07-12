@@ -33,6 +33,7 @@ class Discretizer:
         self.min_points = np.array(min_points)
         self.max_points = np.array(max_points)
         self.buckets = np.array(buckets)
+        self.dimensions = dimensions
 
         self.range = self.max_points - self.min_points
         self.spacing = self.range / self.buckets
