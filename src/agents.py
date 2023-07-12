@@ -1,5 +1,5 @@
 # kudos to @ikostrikov https://github.com/ikostrikov/pytorch-trpo
-from typing import Tuple, List
+from typing import Tuple, List, Union, Optional
 from copy import deepcopy
 
 import numpy as np
@@ -8,11 +8,18 @@ import torch.nn as nn
 from torch.nn.utils.convert_parameters import parameters_to_vector
 from torch.nn.utils.convert_parameters import vector_to_parameters
 
-from src.utils import Buffer
+from src.models import PolicyNetwork, PolicyLR, ValueNetwork, ValueLR
+from src.utils import Buffer, Discretizer
 
 
 class GaussianAgent(nn.Module):
-    def __init__(self, actor, critic, discretizer_actor=None, discretizer_critic=None) -> None:
+    def __init__(
+            self,
+            actor: Union[PolicyNetwork, PolicyLR],
+            critic: Union[ValueNetwork, ValueLR],
+            discretizer_actor: Optional[Discretizer]=None,
+            discretizer_critic: Optional[Discretizer]=None
+        ) -> None:
         super(GaussianAgent, self).__init__()
 
         self.actor = actor
@@ -22,14 +29,13 @@ class GaussianAgent(nn.Module):
         self.discretizer_critic = discretizer_critic
 
     def pi(self, state: np.ndarray) -> torch.distributions.Normal:
-        state = torch.as_tensor(state).double()
-
         # Parameters
         if self.discretizer_actor:
-            state = state.numpy().reshape(-1, len(self.discretizer_actor.buckets))
+            state = state.reshape(-1, len(self.discretizer_actor.buckets))
             indices = self.discretizer_actor.get_index(state)
             mu, log_sigma = self.actor(indices)
         else:
+            state = torch.as_tensor(state).double()
             mu, log_sigma = self.actor(state)
         sigma = log_sigma.exp()
 
@@ -53,7 +59,7 @@ class GaussianAgent(nn.Module):
         value = self.critic(state)
         return value.squeeze()
 
-    def act(self, state: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def act(self, state: np.ndarray) -> Tuple[torch.Tensor, torch.Tensor]:
         dist = self.pi(state)
         action = dist.sample()
         action_logprob = dist.log_prob(action)
@@ -63,12 +69,12 @@ class GaussianAgent(nn.Module):
 class TRPOGaussianNN:
     def __init__(
         self,
-        actor,
-        critic,
-        discretizer_actor=None,
-        discretizer_critic=None,
+        actor: Union[PolicyNetwork, PolicyLR],
+        critic: Union[ValueNetwork, ValueLR],
+        discretizer_actor: Optional[Discretizer]=None,
+        discretizer_critic: Optional[Discretizer]=None,
         gamma: float=0.99,
-        tau=0.97,
+        tau: float=0.97,
         delta: float=.01,
         cg_dampening: float=0.001,
         cg_tolerance: float=1e-10,
@@ -109,7 +115,10 @@ class TRPOGaussianNN:
 
         return action.numpy()
 
-    def calculate_returns(self, values) -> List[float]:
+    def calculate_returns(
+            self,
+            values: np.ndarray
+        ) -> Tuple[torch.Tensor, torch.Tensor]:
         returns = []
         advantages=[]
 
@@ -137,7 +146,7 @@ class TRPOGaussianNN:
 
         return returns, advantages
 
-    def kl_penalty(self, states):
+    def kl_penalty(self, states: torch.Tensor) -> torch.Tensor:
         if self.discretizer_actor:
             states = states.numpy().reshape(-1, len(self.discretizer_actor.buckets))
             indices = self.discretizer_actor.get_index(states)
@@ -161,10 +170,10 @@ class TRPOGaussianNN:
 
     def loss_actor(
             self,
-            states,
-            actions,
-            old_logprobs,
-            advantages
+            states: torch.Tensor,
+            actions: torch.Tensor,
+            old_logprobs: torch.Tensor,
+            advantages: torch.Tensor
     ):
         logprobs = self.policy.evaluate_logprob(states, actions)
         ratio = torch.exp(logprobs - old_logprobs)
@@ -172,17 +181,17 @@ class TRPOGaussianNN:
 
     def line_search(
         self,
-        states,
-        actions,
-        old_logprobs,
-        advantages,
-        params,
-        params_flat,
-        gradients,
-        expected_improve_rate,
-        max_backtracks=10,
-        accept_ratio=.1
-    ):
+        states: torch.Tensor,
+        actions: torch.Tensor,
+        old_logprobs: torch.Tensor,
+        advantages: torch.Tensor,
+        params: List[torch.nn.parameter.Parameter],
+        params_flat: torch.Tensor,
+        gradients: torch.Tensor,
+        expected_improve_rate: float,
+        max_backtracks: int=10,
+        accept_ratio: float=.1
+    ) -> torch.Tensor:
         with torch.no_grad():
             loss = self.loss_actor(states, actions, old_logprobs, advantages)
 
@@ -202,7 +211,12 @@ class TRPOGaussianNN:
                 return params_new
         return params_flat
 
-    def fvp(self, vector, states, params):
+    def fvp(
+            self,
+            vector: torch.Tensor,
+            states: torch.Tensor,
+            params: List[torch.nn.parameter.Parameter]
+        ) -> torch.Tensor:
         vector = vector.clone().requires_grad_()
 
         self.policy.actor.zero_grad()
@@ -217,7 +231,12 @@ class TRPOGaussianNN:
 
         return fisher_vector_product + self.cg_dampening*vector.detach()
 
-    def conjugate_gradient(self, b, states, params):    
+    def conjugate_gradient(
+            self,
+            b: torch.Tensor,
+            states: torch.Tensor,
+            params: List[torch.nn.parameter.Parameter]
+        ) -> torch.Tensor:    
         x = torch.zeros(*b.shape)
         d = b.clone()
         r = b.clone()
@@ -235,7 +254,7 @@ class TRPOGaussianNN:
                 break
         return x
 
-    def zero_grad(self, model, idx=None):
+    def zero_grad(self, model, idx: Optional[int]=None) -> None:
         if idx is None:
             return
 
@@ -243,7 +262,7 @@ class TRPOGaussianNN:
             if i != idx:
                 param.grad.zero_()
 
-    def update_critic(self, idx=None):
+    def update_critic(self, idx: Optional[int]=None) -> torch.Tensor:
         states = torch.stack(self.buffer.states, dim=0).detach()
 
         # GAE estimation
@@ -262,7 +281,7 @@ class TRPOGaussianNN:
 
         return advantages
 
-    def update_actor(self, advantages, idx=None):
+    def update_actor(self, advantages: torch.Tensor, idx: Optional[int]=None) -> None:
         params = list(self.policy.actor.parameters())
         params_old = list(self.policy_old.actor.parameters())
         if idx is not None:

@@ -1,12 +1,15 @@
 from typing import Tuple
+from gym import Env
+
+from src.agents import TRPOGaussianNN
 
 
 class Trainer:
-    def __init__(self, actor_opt, critic_opt):
+    def __init__(self, actor_opt: str, critic_opt: str) -> None:
         self.actor_opt = actor_opt
         self.critic_opt = critic_opt
 
-    def _update(self, agent):
+    def _update(self, agent: TRPOGaussianNN) -> None:
         if self.actor_opt == 'bcd':
             n_params_critic = len(list(agent.policy.critic.parameters()))
             for i in range(n_params_critic):
@@ -25,8 +28,8 @@ class Trainer:
 
     def train(
         self,
-        env,
-        agent,
+        env: Env,
+        agent: TRPOGaussianNN,
         epochs: int,
         max_steps: int,
         update_freq: int,
