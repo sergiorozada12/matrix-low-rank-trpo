@@ -28,14 +28,13 @@ class GaussianAgent(nn.Module):
         self.discretizer_actor = discretizer_actor
         self.discretizer_critic = discretizer_critic
 
-    def pi(self, state: np.ndarray) -> torch.distributions.Normal:
+    def pi(self, state: torch.Tensor) -> torch.distributions.Normal:
         # Parameters
         if self.discretizer_actor:
-            state = state.reshape(-1, len(self.discretizer_actor.buckets))
+            state = state.numpy().reshape(-1, len(self.discretizer_actor.buckets))
             indices = self.discretizer_actor.get_index(state)
             mu, log_sigma = self.actor(indices)
         else:
-            state = torch.as_tensor(state).double()
             mu, log_sigma = self.actor(state)
         sigma = log_sigma.exp()
 
