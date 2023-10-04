@@ -4,7 +4,7 @@ by
 Sergio Rozada,
 and Antonio G. Marques
 
-This code belongs to a paper that has been submitted for publication in *CAMSAP 2023*.
+This code belongs to a paper that has been published in *CAMSAP 2023*.
 
 > The associated paper presents low-rank matrix models for Trust-Region Policy Optimization (TRPO) methods. They are easy to tune, and parametrize. They outperform neural networks in terms of size, and returns.
 
